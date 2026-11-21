@@ -79,6 +79,37 @@ function durationInSeconds(duration) {
     + Number(duration.seconds || 0)
 }
 
+function formatStopwatch(milliseconds) {
+  const totalSeconds = Math.floor(milliseconds / 1000)
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  const centiseconds = Math.floor((milliseconds % 1000) / 10)
+  return [hours, minutes, seconds].map((part) => String(part).padStart(2, '0')).join(':')
+    + `.${String(centiseconds).padStart(2, '0')}`
+}
+
+const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')
+
+async function apiRequest(path, { token, method = 'GET', body } = {}) {
+  const headers = {}
+  if (token) headers.Authorization = `Bearer ${token}`
+  if (body !== undefined) headers['Content-Type'] = 'application/json'
+
+  const response = await fetch(`${API_BASE_URL}/api${path}`, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+  const result = await response.json()
+  if (!response.ok) {
+    const error = new Error(result.error || 'The request could not be completed.')
+    error.status = response.status
+    throw error
+  }
+  return result
+}
+
 let activeAlarmContext = null
 let activeAlarmNodes = []
 
@@ -159,11 +190,56 @@ function App() {
   const [repeatAlarm, setRepeatAlarm] = useState(false)
   const [durationInput, setDurationInput] = useState({ hours: '00', minutes: '05', seconds: '00' })
   const [timer, setTimer] = useState({ remaining: 300, endsAt: null, running: false })
+  const [authToken, setAuthToken] = useState(() => localStorage.getItem('still-auth-token') || '')
+  const [user, setUser] = useState(null)
+  const [authLoading, setAuthLoading] = useState(() => Boolean(localStorage.getItem('still-auth-token')))
+  const [authOpen, setAuthOpen] = useState(false)
+  const [authMode, setAuthMode] = useState('login')
+  const [authForm, setAuthForm] = useState({ username: '', password: '' })
+  const [authBusy, setAuthBusy] = useState(false)
+  const [authError, setAuthError] = useState('')
+  const [accountError, setAccountError] = useState('')
+  const [notes, setNotes] = useState([])
+  const [noteDraft, setNoteDraft] = useState('')
+  const [noteBusy, setNoteBusy] = useState(false)
+  const [notesError, setNotesError] = useState('')
+  const [laps, setLaps] = useState([])
+  const [lapBusy, setLapBusy] = useState(false)
+  const [lapsError, setLapsError] = useState('')
+  const [stopwatch, setStopwatch] = useState({
+    elapsedMs: 0,
+    startedAt: null,
+    running: false,
+    sessionId: null,
+    lastLapMs: 0,
+    lapNumber: 0,
+  })
   const [alert, setAlert] = useState('')
   const [fullscreen, setFullscreen] = useState(Boolean(document.fullscreenElement))
   const [focusMode, setFocusMode] = useState(null)
   const lastAlarmMinute = useRef('')
   const clockDisplay = formatClock(now, is24Hour)
+
+  const expireSession = (error) => {
+    localStorage.removeItem('still-auth-token')
+    setAuthToken('')
+    setUser(null)
+    setNotes([])
+    setLaps([])
+    setAuthLoading(false)
+    setAuthMode('login')
+    setAuthOpen(true)
+    setAuthError(error.message)
+  }
+
+  const handlePrivateRequestError = (error, setError) => {
+    setError(error.message)
+    if (error.status === 401) expireSession(error)
+  }
+
+  const hasCurrentSession = () => (
+    Boolean(authToken) && localStorage.getItem('still-auth-token') === authToken
+  )
 
   useEffect(() => {
     const interval = window.setInterval(() => setNow(new Date()), 16)
@@ -178,6 +254,49 @@ function App() {
   useEffect(() => {
     localStorage.setItem('still-alarms', JSON.stringify(alarms))
   }, [alarms])
+
+  useEffect(() => {
+    if (!authToken) return undefined
+
+    let active = true
+
+    const loadAccount = async () => {
+      try {
+        const account = await apiRequest('/auth/me', { token: authToken })
+        if (!active) return
+        setUser(account.user)
+
+        const [noteResult, lapResult] = await Promise.allSettled([
+          apiRequest('/notes', { token: authToken }),
+          apiRequest('/laps', { token: authToken }),
+        ])
+        if (!active) return
+        if (noteResult.status === 'fulfilled') {
+          setNotes(noteResult.value.notes)
+          setNotesError('')
+        } else {
+          setNotesError(noteResult.reason.message)
+        }
+        if (lapResult.status === 'fulfilled') {
+          setLaps(lapResult.value.laps)
+          setLapsError('')
+        } else {
+          setLapsError(lapResult.reason.message)
+        }
+      } catch (error) {
+        if (!active) return
+        setAccountError(error.message)
+        if (error.status === 401) expireSession(error)
+      } finally {
+        if (active) setAuthLoading(false)
+      }
+    }
+
+    loadAccount()
+    return () => {
+      active = false
+    }
+  }, [authToken])
 
   useEffect(() => {
     if (!timer.running || !timer.endsAt) return undefined
@@ -290,6 +409,164 @@ function App() {
     setAlert('')
   }
 
+  const openAuth = (mode = 'login') => {
+    setAuthMode(mode)
+    setAuthError('')
+    setAccountError('')
+    setAuthOpen(true)
+  }
+
+  const submitAuth = async (event) => {
+    event.preventDefault()
+    setAuthBusy(true)
+    setAuthError('')
+    try {
+      const result = await apiRequest(`/auth/${authMode}`, {
+        method: 'POST',
+        body: authForm,
+      })
+      localStorage.setItem('still-auth-token', result.token)
+      setAuthLoading(true)
+      setAuthToken(result.token)
+      setUser(result.user)
+      setAuthForm({ username: '', password: '' })
+      setAuthOpen(false)
+    } catch (error) {
+      setAuthError(error.message)
+    } finally {
+      setAuthBusy(false)
+    }
+  }
+
+  const signOut = () => {
+    localStorage.removeItem('still-auth-token')
+    setAuthToken('')
+    setUser(null)
+    setNotes([])
+    setLaps([])
+    setAuthLoading(false)
+    setAuthOpen(false)
+    setAccountError('')
+    setAuthError('')
+  }
+
+  const saveNote = async (event) => {
+    event.preventDefault()
+    const text = noteDraft.trim()
+    if (!text || !authToken) return
+
+    setNoteBusy(true)
+    setNotesError('')
+    try {
+      const result = await apiRequest('/notes', {
+        token: authToken,
+        method: 'POST',
+        body: { text },
+      })
+      if (!hasCurrentSession()) return
+      setNotes((current) => [result.note, ...current])
+      setNoteDraft('')
+    } catch (error) {
+      handlePrivateRequestError(error, setNotesError)
+    } finally {
+      setNoteBusy(false)
+    }
+  }
+
+  const deleteNote = async (noteId) => {
+    setNotesError('')
+    try {
+      await apiRequest(`/notes/${encodeURIComponent(noteId)}`, {
+        token: authToken,
+        method: 'DELETE',
+      })
+      if (!hasCurrentSession()) return
+      setNotes((current) => current.filter((note) => note._id !== noteId))
+    } catch (error) {
+      handlePrivateRequestError(error, setNotesError)
+    }
+  }
+
+  const startStopwatch = () => {
+    const sessionId = stopwatch.sessionId || crypto.randomUUID()
+    setStopwatch((current) => ({
+      ...current,
+      startedAt: Date.now() - current.elapsedMs,
+      sessionId,
+      running: true,
+    }))
+  }
+
+  const pauseStopwatch = () => {
+    setStopwatch((current) => ({
+      ...current,
+      elapsedMs: Date.now() - current.startedAt,
+      startedAt: null,
+      running: false,
+    }))
+  }
+
+  const resetStopwatch = () => {
+    setStopwatch({
+      elapsedMs: 0,
+      startedAt: null,
+      running: false,
+      sessionId: null,
+      lastLapMs: 0,
+      lapNumber: 0,
+    })
+  }
+
+  const recordLap = async () => {
+    if (!user) {
+      openAuth('login')
+      return
+    }
+    if (!stopwatch.running || lapBusy) return
+
+    const totalMs = Date.now() - stopwatch.startedAt
+    const lapNumber = stopwatch.lapNumber + 1
+    const lap = {
+      sessionId: stopwatch.sessionId,
+      lapNumber,
+      totalMs,
+      splitMs: totalMs - stopwatch.lastLapMs,
+    }
+
+    setLapBusy(true)
+    setLapsError('')
+    try {
+      const result = await apiRequest('/laps', {
+        token: authToken,
+        method: 'POST',
+        body: lap,
+      })
+      if (!hasCurrentSession()) return
+      setLaps((current) => [result.lap, ...current].slice(0, 100))
+      setStopwatch((current) => current.sessionId === lap.sessionId
+        ? { ...current, lastLapMs: totalMs, lapNumber }
+        : current)
+    } catch (error) {
+      handlePrivateRequestError(error, setLapsError)
+    } finally {
+      setLapBusy(false)
+    }
+  }
+
+  const deleteLap = async (lapId) => {
+    setLapsError('')
+    try {
+      await apiRequest(`/laps/${encodeURIComponent(lapId)}`, {
+        token: authToken,
+        method: 'DELETE',
+      })
+      if (!hasCurrentSession()) return
+      setLaps((current) => current.filter((lap) => lap._id !== lapId))
+    } catch (error) {
+      handlePrivateRequestError(error, setLapsError)
+    }
+  }
+
   useEffect(() => {
     if (!focusMode) return undefined
 
@@ -300,6 +577,28 @@ function App() {
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [focusMode])
+
+  useEffect(() => {
+    if (!authOpen) return undefined
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setAuthOpen(false)
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [authOpen])
+
+  useEffect(() => {
+    if (!stopwatch.running) return undefined
+
+    const interval = window.setInterval(() => {
+      setStopwatch((current) => current.running
+        ? { ...current, elapsedMs: Date.now() - current.startedAt }
+        : current)
+    }, 25)
+    return () => window.clearInterval(interval)
+  }, [stopwatch.running])
 
   const addAlarm = (event) => {
     event.preventDefault()
@@ -366,6 +665,16 @@ function App() {
         </a>
         <div className="topbar-right">
           <span className="live-indicator"><span /> LOCAL TIME</span>
+          {authLoading ? (
+            <span className="account-loading">ACCOUNT</span>
+          ) : user ? (
+            <div className="account-actions">
+              <span className="account-name">{user.username}</span>
+              <button type="button" className="account-button" onClick={signOut}>Sign out</button>
+            </div>
+          ) : (
+            <button type="button" className="account-button" onClick={() => openAuth('login')}>Sign in</button>
+          )}
           <button
             type="button"
             className="icon-button"
@@ -583,6 +892,125 @@ function App() {
               <p className="empty-alarms">No alarms set yet <span>·</span> add one above</p>
             )}
           </section>
+
+          <section className="tool-card stopwatch-card">
+            <div className="card-heading">
+              <div className="card-title-wrap">
+                <span className="card-index">03</span>
+                <div>
+                  <h2>Stopwatch</h2>
+                  <p className="card-subtitle">Track time in split laps.</p>
+                </div>
+              </div>
+              <span className={`status-dot ${stopwatch.running ? 'status-active' : ''}`} title={stopwatch.running ? 'Stopwatch running' : 'Stopwatch stopped'} />
+            </div>
+
+            <div className={`stopwatch-readout ${stopwatch.running ? 'timer-readout-active' : ''}`} role="timer">
+              {formatStopwatch(stopwatch.elapsedMs)}
+            </div>
+            <div className="stopwatch-actions">
+              <button className="primary-button" type="button" onClick={stopwatch.running ? pauseStopwatch : startStopwatch}>
+                <Icon name={stopwatch.running ? 'pause' : 'play'} size={15} />
+                {stopwatch.running ? 'Pause' : 'Start'}
+              </button>
+              <button className="secondary-button" type="button" onClick={recordLap} disabled={!stopwatch.running || lapBusy}>
+                {lapBusy ? 'Saving…' : 'Lap'}
+              </button>
+              <button className="secondary-button" type="button" onClick={resetStopwatch} aria-label="Reset stopwatch">
+                <Icon name="reset" size={16} />
+              </button>
+            </div>
+            {!user && (
+              <p className="account-prompt">
+                <button type="button" className="text-button" onClick={() => openAuth('login')}>Sign in</button>
+                {' '}to save laps.
+              </p>
+            )}
+            {lapsError && <p className="form-error" role="alert">{lapsError}</p>}
+            {user && (
+              <ul className="saved-lap-list" aria-label="Saved stopwatch laps">
+                {laps.length ? laps.slice(0, 10).map((lap) => (
+                  <li className="saved-lap-item" key={lap._id}>
+                    <span className="saved-lap-number">LAP {lap.lapNumber}</span>
+                    <span className="saved-lap-times">
+                      {formatStopwatch(lap.splitMs)}
+                      <small>TOTAL {formatStopwatch(lap.totalMs)}</small>
+                    </span>
+                    <button
+                      type="button"
+                      className="remove-alarm"
+                      aria-label={`Delete lap ${lap.lapNumber}`}
+                      onClick={() => deleteLap(lap._id)}
+                    >
+                      <Icon name="close" size={15} />
+                    </button>
+                  </li>
+                )) : <li className="empty-data">No saved laps yet.</li>}
+              </ul>
+            )}
+          </section>
+
+          <section className="tool-card notes-card">
+            <div className="card-heading">
+              <div className="card-title-wrap">
+                <span className="card-index">04</span>
+                <div>
+                  <h2>Short notes</h2>
+                  <p className="card-subtitle">Keep a thought close at hand.</p>
+                </div>
+              </div>
+            </div>
+
+            {authLoading ? (
+              <p className="empty-data">Checking your account…</p>
+            ) : user ? (
+              <>
+                <form className="note-form" onSubmit={saveNote}>
+                  <label className="sr-only" htmlFor="note-draft">Write a short note</label>
+                  <textarea
+                    id="note-draft"
+                    maxLength="500"
+                    placeholder="Write a short note…"
+                    value={noteDraft}
+                    onChange={(event) => setNoteDraft(event.target.value)}
+                  />
+                  <div className="note-form-footer">
+                    <span>{noteDraft.length}/500</span>
+                    <button className="primary-button" type="submit" disabled={noteBusy || !noteDraft.trim()}>
+                      {noteBusy ? 'Saving…' : 'Save note'}
+                    </button>
+                  </div>
+                </form>
+                {notesError && <p className="form-error" role="alert">{notesError}</p>}
+                <ul className="saved-note-list" aria-label="Saved notes">
+                  {notes.length ? notes.map((note) => (
+                    <li className="saved-note-item" key={note._id}>
+                      <p>{note.text}</p>
+                      <time dateTime={note.createdAt}>
+                        {new Date(note.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                      </time>
+                      <button
+                        type="button"
+                        className="remove-alarm"
+                        aria-label="Delete note"
+                        onClick={() => deleteNote(note._id)}
+                      >
+                        <Icon name="close" size={15} />
+                      </button>
+                    </li>
+                  )) : <li className="empty-data">No saved notes yet.</li>}
+                </ul>
+              </>
+            ) : (
+              <div className="account-prompt notes-prompt">
+                <p>Sign in to save notes and keep them private to your account.</p>
+                {accountError && <p className="form-error" role="alert">{accountError}</p>}
+                <button type="button" className="primary-button" onClick={() => openAuth('login')}>
+                  Sign in or create account
+                </button>
+              </div>
+            )}
+          </section>
         </div>
       </section>
 
@@ -600,6 +1028,67 @@ function App() {
             stopAlarmSound()
             setAlert('')
           }}><Icon name="close" size={16} /></button>
+        </div>
+      )}
+
+      {authOpen && (
+        <div className="auth-overlay" onClick={(event) => {
+          if (event.target === event.currentTarget) setAuthOpen(false)
+        }}>
+          <section className="auth-dialog" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+            <button type="button" className="auth-close" aria-label="Close sign-in dialog" onClick={() => setAuthOpen(false)}>
+              <Icon name="close" size={18} />
+            </button>
+            <span className="eyebrow"><span className="eyebrow-line" /> YOUR SPACE</span>
+            <h2 id="auth-title">{authMode === 'login' ? 'Welcome back.' : 'Create your account.'}</h2>
+            <p className="card-subtitle">
+              {authMode === 'login' ? 'Sign in to access your notes and laps.' : 'Your notes and laps stay linked to your account.'}
+            </p>
+            <form className="auth-form" onSubmit={submitAuth}>
+              <label>
+                Username
+                <input
+                  autoComplete="username"
+                  autoFocus
+                  maxLength="24"
+                  minLength="3"
+                  pattern="[A-Za-z0-9_]+"
+                  required
+                  value={authForm.username}
+                  onChange={(event) => setAuthForm((current) => ({ ...current, username: event.target.value }))}
+                />
+              </label>
+              <label>
+                Password
+                <input
+                  autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
+                  maxLength="72"
+                  minLength="10"
+                  required
+                  type="password"
+                  value={authForm.password}
+                  onChange={(event) => setAuthForm((current) => ({ ...current, password: event.target.value }))}
+                />
+              </label>
+              {authError && <p className="form-error" role="alert">{authError}</p>}
+              <button className="primary-button auth-submit" type="submit" disabled={authBusy}>
+                {authBusy ? 'Please wait…' : authMode === 'login' ? 'Sign in' : 'Create account'}
+              </button>
+            </form>
+            <p className="auth-switch">
+              {authMode === 'login' ? 'New here?' : 'Already have an account?'}
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => {
+                  setAuthMode(authMode === 'login' ? 'register' : 'login')
+                  setAuthError('')
+                }}
+              >
+                {authMode === 'login' ? 'Create account' : 'Sign in'}
+              </button>
+            </p>
+          </section>
         </div>
       )}
     </main>
