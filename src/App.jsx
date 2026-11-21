@@ -73,23 +73,74 @@ function formatDuration(seconds) {
   return [hours, minutes, remainder].map((part) => String(part).padStart(2, '0')).join(':')
 }
 
-function playChime() {
+let activeAlarmContext = null
+let activeAlarmNodes = []
+
+function stopAlarmSound() {
+  activeAlarmNodes.forEach((node) => {
+    try {
+      node.stop()
+    } catch {
+      // The oscillator may already have stopped naturally.
+    }
+  })
+  activeAlarmNodes = []
+
+  if (activeAlarmContext) {
+    activeAlarmContext.close()
+    activeAlarmContext = null
+  }
+}
+
+function playAlarmSound() {
+  stopAlarmSound()
+
   const AudioContextClass = window.AudioContext || window.webkitAudioContext
   if (!AudioContextClass) return
 
   const context = new AudioContextClass()
-  const oscillator = context.createOscillator()
-  const gain = context.createGain()
-  oscillator.type = 'sine'
-  oscillator.frequency.value = 660
-  gain.gain.setValueAtTime(0.0001, context.currentTime)
-  gain.gain.exponentialRampToValueAtTime(0.16, context.currentTime + 0.04)
-  gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.9)
-  oscillator.connect(gain)
-  gain.connect(context.destination)
-  oscillator.start()
-  oscillator.stop(context.currentTime + 0.9)
-  oscillator.onended = () => context.close()
+  activeAlarmContext = context
+
+  if (context.state === 'suspended') {
+    context.resume()
+  }
+
+  const schedulePulse = (start, frequency, duration) => {
+    const oscillator = context.createOscillator()
+    const gain = context.createGain()
+
+    oscillator.type = 'sine'
+    oscillator.frequency.setValueAtTime(frequency, start)
+    oscillator.frequency.linearRampToValueAtTime(frequency * 1.04, start + duration)
+
+    gain.gain.setValueAtTime(0.0001, start)
+    gain.gain.exponentialRampToValueAtTime(0.18, start + 0.025)
+    gain.gain.setValueAtTime(0.18, start + duration - 0.08)
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + duration)
+
+    oscillator.connect(gain)
+    gain.connect(context.destination)
+    oscillator.start(start)
+    oscillator.stop(start + duration)
+    activeAlarmNodes.push(oscillator)
+  }
+
+  for (let cycle = 0; cycle < 10; cycle += 1) {
+    const start = context.currentTime + cycle * 2.2
+    schedulePulse(start, 880, 0.22)
+    schedulePulse(start + 0.28, 880, 0.22)
+    schedulePulse(start + 0.56, 880, 0.22)
+    schedulePulse(start + 1.05, 660, 0.52)
+  }
+
+  const lastOscillator = activeAlarmNodes[activeAlarmNodes.length - 1]
+  if (lastOscillator) {
+    lastOscillator.onended = () => {
+      activeAlarmNodes = []
+      activeAlarmContext = null
+      context.close()
+    }
+  }
 }
 
 function App() {
@@ -130,7 +181,7 @@ function App() {
       if (remaining === 0) {
         setTimer({ remaining: 0, endsAt: null, running: false })
         setAlert('Timer complete')
-        playChime()
+        playAlarmSound()
       } else {
         setTimer((current) => ({ ...current, remaining }))
       }
@@ -154,7 +205,7 @@ function App() {
 
       lastAlarmMinute.current = minuteKey
       setAlert(dueAlarm.label || 'Alarm')
-      playChime()
+      playAlarmSound()
       if (!dueAlarm.repeat) {
         setAlarms((current) => current.map((alarm) => (
           alarm.id === dueAlarm.id ? { ...alarm, enabled: false } : alarm
@@ -204,6 +255,7 @@ function App() {
   }
 
   const startTimer = () => {
+    stopAlarmSound()
     const seconds = timer.remaining > 0
       ? timer.remaining
       : Number(durationInput.minutes) * 60 + Number(durationInput.seconds)
@@ -218,6 +270,7 @@ function App() {
   }
 
   const resetTimer = () => {
+    stopAlarmSound()
     const seconds = Number(durationInput.minutes) * 60 + Number(durationInput.seconds)
     setTimer({ remaining: seconds, endsAt: null, running: false })
     setAlert('')
@@ -514,7 +567,10 @@ function App() {
         <div className="alert-toast" role="status">
           <span className="alert-pulse" />
           <span>{alert}</span>
-          <button type="button" aria-label="Dismiss alert" onClick={() => setAlert('')}><Icon name="close" size={16} /></button>
+          <button type="button" aria-label="Dismiss alert" onClick={() => {
+            stopAlarmSound()
+            setAlert('')
+          }}><Icon name="close" size={16} /></button>
         </div>
       )}
     </main>
