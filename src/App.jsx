@@ -40,12 +40,14 @@ function Icon({ name, size = 18 }) {
 }
 
 function formatTime(date, is24Hour) {
-  return new Intl.DateTimeFormat(undefined, {
+  const time = new Intl.DateTimeFormat(undefined, {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
+    fractionalSecondDigits: 2,
     hour12: !is24Hour,
   }).format(date)
+  return time
 }
 
 function formatClock(date, is24Hour) {
@@ -54,9 +56,12 @@ function formatClock(date, is24Hour) {
     minute: '2-digit',
     hour12: !is24Hour,
   }).formatToParts(date)
+  const centiseconds = String(Math.floor(date.getMilliseconds() / 10)).padStart(2, '0')
+  const seconds = String(date.getSeconds()).padStart(2, '0')
 
   return {
-    time: parts.filter((part) => part.type !== 'dayPeriod').map((part) => part.value).join(''),
+    time: `${parts.filter((part) => part.type !== 'dayPeriod').map((part) => part.value).join('')}:${seconds}`,
+    centiseconds,
     period: parts.find((part) => part.type === 'dayPeriod')?.value || '',
   }
 }
@@ -104,7 +109,7 @@ function App() {
   const clockDisplay = formatClock(now, is24Hour)
 
   useEffect(() => {
-    const interval = window.setInterval(() => setNow(new Date()), 250)
+    const interval = window.setInterval(() => setNow(new Date()), 16)
     return () => window.clearInterval(interval)
   }, [])
 
@@ -260,8 +265,8 @@ function App() {
           {focusMode === 'clock' ? (
             <div className="focus-clock" aria-label={`Current time ${formatTime(now, is24Hour)}`}>
               <span>{clockDisplay.time}</span>
+              <sup className="focus-centiseconds">{clockDisplay.centiseconds}</sup>
               {clockDisplay.period && <span className="focus-period">{clockDisplay.period}</span>}
-              <span className="focus-seconds">{String(now.getSeconds()).padStart(2, '0')}</span>
             </div>
           ) : (
             <>
@@ -321,8 +326,8 @@ function App() {
           <div className="clock-display">
             <div className="time-row" aria-label={`Current time ${formatTime(now, is24Hour)}`}>
               <span className="time-value">{clockDisplay.time}</span>
+              <sup className="time-centiseconds">{clockDisplay.centiseconds}</sup>
               {clockDisplay.period && <span className="time-period">{clockDisplay.period}</span>}
-              <span className="time-seconds">{String(now.getSeconds()).padStart(2, '0')}</span>
             </div>
             <div className="date-row">
               <span className="date-dot" />
