@@ -2,12 +2,146 @@
   min-height: 100vh;
 }
 
+.focus-screen {
+  position: fixed;
+  z-index: 10;
+  inset: 0;
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.focus-content {
+  width: 100%;
+  padding: 32px;
+  display: grid;
+  justify-items: center;
+  gap: 42px;
+}
+
+.focus-exit {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.focus-exit:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.focus-clock {
+  display: flex;
+  align-items: flex-start;
+  white-space: nowrap;
+  font: 400 clamp(72px, 17vw, 240px)/0.95 var(--heading);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.07em;
+}
+
+.focus-period {
+  margin: 0.13em 0 0 0.35em;
+  color: var(--muted);
+  font: 500 0.1em/1 var(--mono);
+  letter-spacing: 0;
+}
+
+.focus-seconds {
+  margin: 0.13em 0 0 0.28em;
+  color: var(--accent);
+  font: 400 0.14em/1 var(--mono);
+  letter-spacing: -0.05em;
+}
+
+.focus-timer {
+  color: var(--text);
+  font: 400 clamp(48px, 15vw, 210px)/1 var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.08em;
+}
+
+.focus-timer-active {
+  color: var(--accent);
+}
+
+.focus-timer-actions {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.focus-control {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 0 15px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.focus-control:hover {
+  border-color: var(--line-strong);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.focus-control-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--button-text);
+}
+
+.focus-control-primary:hover {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--button-text);
+  filter: brightness(1.05);
+}
+
 .app-shell {
   width: min(1120px, calc(100% - 88px));
   min-height: 100vh;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
+}
+
+.timer-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.focus-card-button {
+  width: 31px;
+  height: 31px;
+  border-color: transparent;
+}
+
+.focus-card-button:hover {
+  border-color: var(--line-strong);
 }
 
 .topbar {
@@ -319,6 +453,26 @@
 
 .format-separator {
   color: var(--line-strong);
+}
+
+.focus-launch {
+  position: absolute;
+  bottom: 26px;
+  left: 77px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0;
+  border: 0;
+  background: none;
+  color: var(--faint);
+  font: 10px var(--mono);
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+
+.focus-launch:hover {
+  color: var(--accent);
 }
 
 .tools-column {
@@ -911,6 +1065,10 @@
 
   .format-button {
     bottom: -2px;
+  }
+
+  .focus-launch {
+    bottom: 25px;
   }
 
   .tools-column {

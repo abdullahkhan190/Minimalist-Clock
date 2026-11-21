@@ -99,6 +99,7 @@ function App() {
   const [timer, setTimer] = useState({ remaining: 300, endsAt: null, running: false })
   const [alert, setAlert] = useState('')
   const [fullscreen, setFullscreen] = useState(Boolean(document.fullscreenElement))
+  const [focusMode, setFocusMode] = useState(null)
   const lastAlarmMinute = useRef('')
   const clockDisplay = formatClock(now, is24Hour)
 
@@ -217,6 +218,17 @@ function App() {
     setAlert('')
   }
 
+  useEffect(() => {
+    if (!focusMode) return undefined
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setFocusMode(null)
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [focusMode])
+
   const addAlarm = (event) => {
     event.preventDefault()
     if (!alarmTime) return
@@ -230,6 +242,47 @@ function App() {
     setAlarmTime('')
     setAlarmLabel('')
     setRepeatAlarm(false)
+  }
+
+  if (focusMode) {
+    return (
+      <main className="focus-screen">
+        <button
+          type="button"
+          className="focus-exit"
+          aria-label="Exit focus mode"
+          title="Exit focus mode (Esc)"
+          onClick={() => setFocusMode(null)}
+        >
+          <Icon name="close" size={20} />
+        </button>
+        <div className="focus-content">
+          {focusMode === 'clock' ? (
+            <div className="focus-clock" aria-label={`Current time ${formatTime(now, is24Hour)}`}>
+              <span>{clockDisplay.time}</span>
+              {clockDisplay.period && <span className="focus-period">{clockDisplay.period}</span>}
+              <span className="focus-seconds">{String(now.getSeconds()).padStart(2, '0')}</span>
+            </div>
+          ) : (
+            <>
+              <div className={`focus-timer ${timer.running ? 'focus-timer-active' : ''}`} role="timer">
+                {formatDuration(timer.remaining)}
+              </div>
+              <div className="focus-timer-actions">
+                <button className="focus-control focus-control-primary" type="button" onClick={timer.running ? pauseTimer : startTimer}>
+                  <Icon name={timer.running ? 'pause' : 'play'} size={16} />
+                  {timer.running ? 'Pause' : timer.remaining === 0 ? 'Start again' : 'Start'}
+                </button>
+                <button className="focus-control" type="button" aria-label="Reset timer" onClick={resetTimer}>
+                  <Icon name="reset" size={16} />
+                  Reset
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </main>
+    )
   }
 
   return (
@@ -301,6 +354,10 @@ function App() {
             <span className="format-separator">/</span>
             <span className={!is24Hour ? 'format-option selected' : 'format-option'}>12H</span>
           </button>
+          <button className="focus-launch" type="button" onClick={() => setFocusMode('clock')}>
+            <Icon name="expand" size={13} />
+            Focus clock
+          </button>
         </div>
 
         <div className="tools-column">
@@ -313,7 +370,18 @@ function App() {
                   <p className="card-subtitle">A little focus goes a long way.</p>
                 </div>
               </div>
-              <span className={`status-dot ${timer.running ? 'status-active' : ''}`} title={timer.running ? 'Timer running' : 'Timer stopped'} />
+              <div className="timer-heading-actions">
+                <span className={`status-dot ${timer.running ? 'status-active' : ''}`} title={timer.running ? 'Timer running' : 'Timer stopped'} />
+                <button
+                  type="button"
+                  className="icon-button focus-card-button"
+                  aria-label="Focus timer"
+                  title="Focus timer"
+                  onClick={() => setFocusMode('timer')}
+                >
+                  <Icon name="expand" size={15} />
+                </button>
+              </div>
             </div>
 
             <div className={`timer-readout ${timer.running ? 'timer-readout-active' : ''}`}>
