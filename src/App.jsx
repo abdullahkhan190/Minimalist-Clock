@@ -73,6 +73,12 @@ function formatDuration(seconds) {
   return [hours, minutes, remainder].map((part) => String(part).padStart(2, '0')).join(':')
 }
 
+function durationInSeconds(duration) {
+  return Number(duration.hours || 0) * 3600
+    + Number(duration.minutes || 0) * 60
+    + Number(duration.seconds || 0)
+}
+
 let activeAlarmContext = null
 let activeAlarmNodes = []
 
@@ -151,7 +157,7 @@ function App() {
   const [alarmTime, setAlarmTime] = useState('')
   const [alarmLabel, setAlarmLabel] = useState('')
   const [repeatAlarm, setRepeatAlarm] = useState(false)
-  const [durationInput, setDurationInput] = useState({ minutes: '05', seconds: '00' })
+  const [durationInput, setDurationInput] = useState({ hours: '00', minutes: '05', seconds: '00' })
   const [timer, setTimer] = useState({ remaining: 300, endsAt: null, running: false })
   const [alert, setAlert] = useState('')
   const [fullscreen, setFullscreen] = useState(Boolean(document.fullscreenElement))
@@ -237,18 +243,26 @@ function App() {
   }
 
   const updateDuration = (field, value) => {
-    const numericValue = value.replace(/\D/g, '').slice(0, 2) || '0'
-    const next = {
-      ...durationInput,
-      [field]: field === 'seconds'
-        ? String(Math.min(59, Number(numericValue))).padStart(2, '0')
-        : numericValue,
-    }
+    const next = { ...durationInput, [field]: value.replace(/\D/g, '').slice(0, 2) }
     setDurationInput(next)
     if (!timer.running) {
       setTimer((current) => ({
         ...current,
-        remaining: Number(next.minutes) * 60 + Number(next.seconds),
+        remaining: durationInSeconds(next),
+        endsAt: null,
+      }))
+    }
+  }
+
+  const normalizeDuration = (field) => {
+    const limit = field === 'seconds' ? 59 : 99
+    const value = String(Math.min(limit, Number(durationInput[field] || 0))).padStart(2, '0')
+    const next = { ...durationInput, [field]: value }
+    setDurationInput(next)
+    if (!timer.running) {
+      setTimer((current) => ({
+        ...current,
+        remaining: durationInSeconds(next),
         endsAt: null,
       }))
     }
@@ -258,7 +272,7 @@ function App() {
     stopAlarmSound()
     const seconds = timer.remaining > 0
       ? timer.remaining
-      : Number(durationInput.minutes) * 60 + Number(durationInput.seconds)
+      : durationInSeconds(durationInput)
     if (seconds <= 0) return
     setAlert('')
     setTimer({ remaining: seconds, endsAt: Date.now() + seconds * 1000, running: true })
@@ -271,7 +285,7 @@ function App() {
 
   const resetTimer = () => {
     stopAlarmSound()
-    const seconds = Number(durationInput.minutes) * 60 + Number(durationInput.seconds)
+    const seconds = durationInSeconds(durationInput)
     setTimer({ remaining: seconds, endsAt: null, running: false })
     setAlert('')
   }
@@ -448,16 +462,31 @@ function App() {
             {!timer.running && (
               <div className="timer-inputs">
                 <label>
+                  <span className="sr-only">Hours</span>
+                  <input
+                    aria-label="Timer hours"
+                    inputMode="numeric"
+                    maxLength="2"
+                    onChange={(event) => updateDuration('hours', event.target.value)}
+                    onFocus={(event) => event.target.select()}
+                    onBlur={() => normalizeDuration('hours')}
+                    type="text"
+                    value={durationInput.hours}
+                  />
+                  <span>HR</span>
+                </label>
+                <span className="timer-input-colon">:</span>
+                <label>
                   <span className="sr-only">Minutes</span>
                   <input
                     aria-label="Timer minutes"
                     inputMode="numeric"
-                    max="99"
-                    min="0"
+                    maxLength="2"
                     onChange={(event) => updateDuration('minutes', event.target.value)}
                     onFocus={(event) => event.target.select()}
+                    onBlur={() => normalizeDuration('minutes')}
                     type="text"
-                    value={String(durationInput.minutes).padStart(2, '0')}
+                    value={durationInput.minutes}
                   />
                   <span>MIN</span>
                 </label>
@@ -467,12 +496,12 @@ function App() {
                   <input
                     aria-label="Timer seconds"
                     inputMode="numeric"
-                    max="59"
-                    min="0"
+                    maxLength="2"
                     onChange={(event) => updateDuration('seconds', event.target.value)}
                     onFocus={(event) => event.target.select()}
+                    onBlur={() => normalizeDuration('seconds')}
                     type="text"
-                    value={String(durationInput.seconds).padStart(2, '0')}
+                    value={durationInput.seconds}
                   />
                   <span>SEC</span>
                 </label>

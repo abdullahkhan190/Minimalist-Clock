@@ -557,7 +557,7 @@
 .timer-inputs {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
   height: 44px;
   margin-top: 14px;
 }
