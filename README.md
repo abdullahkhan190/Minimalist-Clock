@@ -74,3 +74,8 @@ The frontend is static, so deploy the API as a separate Render web service:
 6. Run the **Deploy to GitHub Pages** workflow again so the frontend is built with that API URL.
 
 For local development, `CLIENT_ORIGINS` should also include `http://localhost:5173`.
+
+The API writes one structured JSON log per event to stdout/stderr. These logs include
+request IDs, HTTP status and duration, authentication outcomes, database startup, and
+account data actions. Configure your hosting platform to forward service logs to Splunk;
+passwords, tokens, note text, request bodies, and query strings are not logged.

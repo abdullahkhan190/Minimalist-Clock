@@ -50,3 +50,36 @@ test('private note and lap endpoints reject unauthenticated requests', async (co
     assert.equal(response.status, 401)
   }
 })
+
+test('HTTP logs are structured and omit query strings', async (context) => {
+  const server = app.listen(0)
+  await new Promise((resolve) => server.once('listening', resolve))
+  context.after(() => new Promise((resolve, reject) => {
+    server.close((error) => error ? reject(error) : resolve())
+    server.closeAllConnections()
+  }))
+
+  const { port } = server.address()
+  const log = console.log
+  const errorLog = console.error
+  const logs = []
+  console.log = (entry) => logs.push(entry)
+  console.error = (entry) => logs.push(entry)
+
+  let response
+  try {
+    response = await fetch(`http://127.0.0.1:${port}/api/health?token=do-not-log`, {
+      headers: { Connection: 'close' },
+    })
+  } finally {
+    console.log = log
+    console.error = errorLog
+  }
+
+  assert.ok(response.headers.get('x-request-id'))
+  const requestLog = logs.map((entry) => JSON.parse(entry)).find((entry) => entry.event === 'http.request')
+  assert.ok(requestLog)
+  assert.equal(requestLog.path, '/api/health')
+  assert.equal(requestLog.status_code, 503)
+  assert.equal(JSON.stringify(requestLog).includes('do-not-log'), false)
+})
