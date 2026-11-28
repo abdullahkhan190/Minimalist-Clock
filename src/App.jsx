@@ -58,9 +58,17 @@ function formatClock(date, is24Hour) {
   }).formatToParts(date)
   const centiseconds = String(Math.floor(date.getMilliseconds() / 10)).padStart(2, '0')
   const seconds = String(date.getSeconds()).padStart(2, '0')
+  const dayPeriodIndex = parts.findIndex((part) => part.type === 'dayPeriod')
+  const time = parts
+    .filter((part, index) => part.type !== 'dayPeriod'
+      && !(part.type === 'literal'
+        && dayPeriodIndex >= 0
+        && (index === dayPeriodIndex - 1 || index === dayPeriodIndex + 1)))
+    .map((part) => part.value)
+    .join('')
 
   return {
-    time: `${parts.filter((part) => part.type !== 'dayPeriod').map((part) => part.value).join('')}:${seconds}`,
+    time: `${time}:${seconds}`,
     centiseconds,
     period: parts.find((part) => part.type === 'dayPeriod')?.value || '',
   }
