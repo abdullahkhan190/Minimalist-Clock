@@ -62,7 +62,7 @@
 }
 
 .focus-period {
-  margin: 0.13em 0 0 0.35em;
+  margin: 0.13em 0 0 0.1em;
   color: var(--muted);
   font: 500 0.1em/1 var(--mono);
   letter-spacing: 0;
@@ -335,7 +335,7 @@
 }
 
 .time-period {
-  margin: 9px 0 0 9px;
+  margin: 9px 0 0 3px;
   color: var(--muted);
   font: 500 11px/1 var(--mono);
   letter-spacing: 0;
@@ -1334,7 +1334,7 @@
   }
 
   .time-period {
-    margin: 7px 0 0 7px;
+    margin: 7px 0 0 2px;
     font-size: 9px;
   }
 
